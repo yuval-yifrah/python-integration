@@ -20,4 +20,7 @@ to run this python file, you will need to do a couple of things before.
    to add them forever do this:
    open settings > environment variables > user variables > add them one by one and save
 
-3. 
+if you run this from pycharm, add them through the terminal:
+   export AWS_ACCESS_KEY_ID="YOUR_ACCESS_KEY_ID"
+   export AWS_SECRET_ACCESS_KEY="YOUR_SECRET_ACCESS_KEY"
+   export AWS_DEFAULT_REGION="us-east-1"
