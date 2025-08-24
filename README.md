@@ -47,9 +47,9 @@ to run this python file, you will need to do a couple of things before.
       sudo python3 -m pip install click
 3. examples for how to run this awesome tool:
    in your gitbash run:  
-   python integrative_project.py ec2 create amazon-linux t3.micro yuvalyhome yuvalySG subnet1
-   python integrative_project.py route53 manage delete yuvaly.com www.yuvaly.com A 1.2.43.4
-   integrative_project.py s3 create private yuvalyprivate
+   python3 integrative_project.py ec2 create amazon-linux t3.micro yuvalyhome yuvalySG subnet1
+   python3 integrative_project.py route53 manage delete yuvaly.com www.yuvaly.com A 1.2.43.4
+   python3 integrative_project.py s3 create private yuvalyprivate
    
    use --help after every word to see what you need to do next!
 
