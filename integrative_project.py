@@ -5,9 +5,12 @@ import click
 import boto3
 import os
 
-CREATED_BY = "yuvaly"
+CREATED_BY = "yuvalyifrah_cli"
 UBUNTU_AMI = "ami-020cba7c55df1f615"
 AMAZON_LINUX = "ami-00ca32bbc84273381"
+VPC_ID = "vpc-014e64327a6883f05"
+SUBNET1 = "subnet-0468e933b4fdab115"
+SUBNET2 = "subnet-0a8336384b6d3b85b"
 
 @click.group()
 def cli():
@@ -37,30 +40,70 @@ def aws_connect(resource):
     client = session.client(resource)
     return client
 
+
 @ec2.command("create")
 @click.argument("ami", type=click.Choice(["ubuntu", "amazon-linux"], case_sensitive=False))
 @click.argument("instance_type", type=click.Choice(["t3.micro", "t2.small"], case_sensitive=False))
-def create_ec2(ami,instance_type):
+@click.argument("key_pair")
+@click.argument("sg")
+@click.argument("subnet", type=click.Choice(["subnet1", "subnet2"], case_sensitive=False))
+@click.argument("instance_name")
+def create_ec2(ami,instance_type,key_pair,sg, subnet, instance_name):
     client = aws_connect("ec2")
     """
     AMI: ubuntu/amazon-linux
 
     instance_type: t3.micro/t2.small
+    
+    key_pair: add a key pair that already exists in your aws account
+    
+    sg: security group in your vpc
+    
+    instance_name: your instance name
     """
+
+    try:
+        client.describe_key_pairs(KeyNames=[key_pair])
+    except client.exceptions.ClientError:
+        print(f"Key pair {key_pair} does not exist in your AWS account")
+        return
+
     ami_id = UBUNTU_AMI if ami.lower() == "ubuntu" else AMAZON_LINUX
     running_count = count_list_ec2()
+
+    sg_list = client.describe_security_groups(Filters=[
+        {"Name": "group-name", "Values": [sg]},
+        {"Name": "vpc-id", "Values": [VPC_ID]}
+    ])["SecurityGroups"]
+
+    if not sg_list:
+        print(f"Security Group '{sg}' not found in VPC {VPC_ID}")
+        return
+    sg_id = sg_list[0]["GroupId"]
+
+    if subnet == "subnet1":
+        subnet = SUBNET1
+    elif subnet == "subnet2":
+        subnet = SUBNET2
+    else:
+        print(f"Subnet {subnet} does not exist in your AWS account")
+
     if running_count < 2:
         client.run_instances(
             ImageId=ami_id,
             InstanceType=instance_type,
             MinCount=1,
             MaxCount=1,
-            TagSpecifications=[
-                {
-                    'ResourceType': 'instance',
-                    'Tags': [{"Key": "Name", "Value": f"{CREATED_BY}-{ami}-{instance_type}"},{'Key': 'CreatedBy', 'Value': CREATED_BY}]
-                }
-            ]
+            KeyName=key_pair,
+            SubnetId=subnet,
+            SecurityGroupIds=[sg_id],
+            TagSpecifications=[{
+                'ResourceType': 'instance',
+                'Tags': [
+                    {"Key": "Name", "Value": instance_name},
+                    {"Key": "CreatedBy", "Value": CREATED_BY}
+                ]
+            }]
         )
         print(f"created an instance with {ami_id} and {instance_type}")
     else:
@@ -75,6 +118,12 @@ def manage_ec2(action,instance_id):
     """
     action: start/stop/terminate
     """
+    instance = client.describe_instances(InstanceIds=[instance_id])["Reservations"][0]["Instances"][0]
+    tags = {t["Key"]: t["Value"] for t in instance.get("Tags", [])}
+    if tags.get("CreatedBy") != CREATED_BY:
+        print("Cannot manage instances not created by this CLI")
+        return
+
     if action == "start":
         running_count = count_list_ec2()
         if running_count < 2:
@@ -85,7 +134,7 @@ def manage_ec2(action,instance_id):
         client.stop_instances(InstanceIds=[instance_id])
     elif action == "terminate":
         client.terminate_instances(InstanceIds=[instance_id])
-    print(action)
+    print(f"{instance_id} is now {action}")
 
 def count_list_ec2():
     client = aws_connect("ec2")
@@ -101,7 +150,7 @@ def count_list_ec2():
                 instance_type = instance["InstanceType"]
                 state = instance["State"]["Name"]
                 print(f"ID: {instance_id} | Type: {instance_type} | State: {state}")
-                if state == "running":
+                if state in ["pending", "running"]:
                     count += 1
                 found = True
     if not found:
@@ -160,9 +209,16 @@ def upload_s3(file_name, bucket_name, object_name):
 
     """
     file_name: full file path and name
+    
     bucket_name: bucket name when you created the bucket
+    
     object_name: object name - the name of the file in s3
     """
+    response_tag = client.get_bucket_tagging(Bucket=bucket_name)
+    tags = {t["Key"]: t["Value"] for t in response_tag["TagSet"]}
+    if tags.get("CreatedBy") != CREATED_BY:
+        print("Cannot upload to buckets not created by CLI")
+        return
 
     client.upload_file(file_name, bucket_name, object_name)
     print("added")
@@ -217,9 +273,13 @@ def create_route53(zone_name):
 def manage_route53(action, zone_name, record_name, record_type, record_value):
     """
     manage actions: create/upsert/delete
+
     zone_name: the dns name for your zone. please add .com at the end
+
     record_name: name of the record to update must include zone name in it (https, https, www)
+
     record_type: type of the record to update (A, AAAA, CNAME, MX, NS, PTR, SOA, SPF, SRV, TXT, CAA, DS, NAPTR, TLS)
+
     record_value: value of the record to update
     """
     client = aws_connect("route53")
